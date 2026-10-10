@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import AnyHttpUrl, SecretStr
+from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,3 +18,7 @@ class Settings(BaseSettings):
     open_wearables_api_key: SecretStr = SecretStr("")
     open_wearables_user_id: str = ""
     nestwatch_patient_id: str = "maya"
+
+    # Data sufficiency rules, not clinical thresholds.
+    observed_change_min_samples: int = Field(default=3, ge=2)
+    observed_change_max_staleness_days: int = Field(default=2, ge=0)

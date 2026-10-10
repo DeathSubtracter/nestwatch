@@ -235,3 +235,87 @@ failures return the same 502/503/504 errors as the debug endpoints, rather than 
 partial-success timeline. Malformed device records return 502; missing, invalid,
 or reversed query dates return 422. The patient tests use mocked upstream
 responses and require no live Open Wearables server.
+
+## Observed-change analysis
+
+`GET /patients/maya/observed-change` compares raw measurement sample means
+between two configurable windows. It describes the data without diagnosing,
+assigning clinical thresholds, creating a risk score, or forecasting.
+
+For manual verification:
+
+1. Keep Open Wearables running on port 8000 and set the existing API key and
+   user ID in `backend/.env` to your seeded demo user.
+2. Optionally configure these data sufficiency rules in `backend/.env`:
+
+   ```dotenv
+   OBSERVED_CHANGE_MIN_SAMPLES=3
+   OBSERVED_CHANGE_MAX_STALENESS_DAYS=2
+   ```
+
+   The minimum is per metric, per window, and must be at least 2. The staleness
+   limit is a nonnegative UTC calendar-date gap between the latest sample and
+   **that window's end**, not today's date. Defaults are engineering data
+   sufficiency rules, not clinical thresholds. They also apply to weight.
+3. Start or restart Nestwatch from the repository root:
+
+   ```sh
+   cd backend
+   source .venv/bin/activate
+   python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+   ```
+
+4. In another terminal, request the comparison. Adjust both windows to match
+   your seeded measurements:
+
+   ```sh
+   curl --fail-with-body --get 'http://localhost:8001/patients/maya/observed-change' \
+     --data-urlencode 'reference_start=2026-10-01' \
+     --data-urlencode 'reference_end=2026-10-07' \
+     --data-urlencode 'recent_start=2026-10-08' \
+     --data-urlencode 'recent_end=2026-10-14'
+   ```
+
+All four dates are required and include both boundary days in UTC. Each start
+must be on or before its end; the reference window must end before the recent
+window starts. Invalid, reversed, or overlapping windows return 422 without
+calling Open Wearables.
+
+The response includes the windows, applied `policy`, and eight `metrics` rows:
+glucose, systolic/diastolic blood pressure, resting heart rate, SDNN HRV,
+skin/body temperature, and weight. Every requested metric is present even when
+it has no measurements. Each row contains:
+
+- `metric_type`, `metric_name`, `metric_definition`, and `unit`.
+- `reference_sample_count`, `recent_sample_count`, and their respective means.
+- `absolute_change`: the signed difference `recent_mean - reference_mean` in
+  the original unit. No unit conversion or sample imputation is performed.
+- `percent_change`: `absolute_change / reference_mean * 100`, when meaningful.
+  It is null for zero/negative baselines, insufficient data, or numeric overflow.
+  Temperature percentages are suppressed unless the unit is Kelvin (`K` or
+  `kelvin`), because Celsius/Fahrenheit have an arbitrary zero. The reason is
+  given in `percent_change_unavailable_reason`.
+- Latest sample timestamps and per-window provider/source/device provenance,
+  including each source group's sample count. Unknown provenance stays null.
+  `provenance_changed` reports a difference in source/device sets between windows.
+- `enough_data`, `status` (`compared` or `insufficient_data`), and explicit
+  `reasons`, such as `missing_recent_data`, `too_few_reference_samples`,
+  `stale_recent_data`, `missing_unit`, or `incompatible_units`.
+
+Means use equally weighted raw samples. Sources sharing the exact same unit are
+pooled and their provenance remains visible; measurements are not adjusted for
+source differences or sampling cadence. Multiple units in one window prevent
+that window's mean. Different units across windows prevent comparison, with
+`reference_units`, `recent_units`, and `available_units` retained for inspection.
+
+Missing, sparse, stale, and incompatible-unit data never generate a comparison
+or an implied normal result: change fields are null and `enough_data` is false.
+Single-unit means from available samples may still be shown alongside those
+explicit insufficiency reasons. `compared` only indicates that the configured
+data checks passed; no normal/abnormal label is returned.
+
+The service uses the existing unified timeline pipeline for the combined date
+range, then includes only device measurement entries in each window. Samples
+in gaps between windows, context, symptoms, sleep, and unrequested heart-rate
+measurements do not contribute. All cursor pages are included. Pipeline errors
+remain 502/503/504 responses instead of being presented as missing measurements.
