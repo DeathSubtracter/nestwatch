@@ -22,3 +22,7 @@ class Settings(BaseSettings):
     # Data sufficiency rules, not clinical thresholds.
     observed_change_min_samples: int = Field(default=3, ge=2)
     observed_change_max_staleness_days: int = Field(default=2, ge=0)
+
+    # Editable synthetic-event review values; these are not diagnostic rules.
+    bp_review_systolic_threshold: float = Field(default=140.0, gt=0, allow_inf_nan=False)
+    bp_review_diastolic_threshold: float = Field(default=90.0, gt=0, allow_inf_nan=False)

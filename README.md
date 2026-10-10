@@ -448,3 +448,143 @@ invalid, gapped, or insufficient data returns a clear JSON 503 response. No
 model files or database are written. Tests cover deterministic training,
 strictly past-only features and historical inference, chronological target
 boundaries, train-only scaling, finite predictions, and the complete endpoint.
+
+## Prototype seven-day BP measurement-event forecast
+
+`GET /patients/maya/forecast/bp` estimates only this target:
+
+> Whether at least one future synthetic blood-pressure measurement reaches a
+> configurable BP review threshold within the next 7 days.
+
+A positive label means **systolic >= configured systolic value OR diastolic >=
+configured diastolic value** in at least one paired measurement. Equality
+counts. This is a synthetic measurement event, not a maternal risk score or a
+prediction of preeclampsia, gestational hypertension, or another diagnosed
+condition. All outputs have `synthetic=true`, `validated=false`, and
+`prototype=true`.
+
+Training data is the separate local file
+`backend/app/data/maya_synthetic_bp_training.csv`: 730 paired measurements at
+08:00/20:00 UTC over 365 days (October 15, 2025–October 14, 2026), generated with
+seed 73. Every row carries synthetic/not-clinically-validated flags and
+`source=nestwatch_synthetic_bp_training`. It is a stylized training fixture,
+not Maya's actual history or clinically validated physiology. Most measurements
+are baseline periods (456 of 730 in the seed-73 fixture), with seven deliberately
+generated BP-rise episodes starting at dataset days 28, 76, 128, 182, 236, 298,
+and 337. Strengths vary with the seed. Smooth cosine ramps rise over 6–10 days,
+plateau for 2–3 days, and return over 8–10 days, on top of varying baseline levels,
+daily offsets, and noise. Several episodes cross the 140/90 review values over
+multiple days; weaker episodes need not cross. These episodes are deliberately
+generated **software/model testing fixtures, not validated physiology**, and
+model no disease outcomes. Their fixed schedule and varied shapes were defined
+before inspecting model scores; neither the generator nor logistic parameters
+were tuned to obtain perfect performance.
+
+`fixture_episode_id` and `fixture_episode_phase` annotate the CSV for inspection.
+The model never uses these annotations, the episode schedule, or future episode
+information as features. Positive labels continue to come only from future
+measured systolic/diastolic values and the configured thresholds.
+It is independent of Open Wearables ingestion and the existing patient timeline.
+Regenerate it from `backend`, with the virtual environment activated:
+
+```sh
+python -m app.services.synthetic_bp
+```
+
+The model uses `StandardScaler` and fixed L2 logistic regression (`C=1`,
+`solver=lbfgs`). Eight BP-only features describe the preceding seven days:
+systolic/diastolic means, slopes in mmHg/day, population standard deviations,
+and latest values. Features use only measurements strictly before the origin.
+The response includes raw `feature_values` and the three largest signed
+standardized model log-odds terms in `main_contributing_features`; these are
+statistical model components, not causal or clinical explanations.
+
+The chronological 80/20 split uses the first 584 measurements (292 days) for
+training and the final 146 (73 days) for holdout. Training has one origin per
+day, and only complete seven-day target windows ending before the split are
+included (279 training examples). Scaling uses training features only. The
+frozen evaluation model is scored on 10 nonoverlapping seven-day windows,
+covering 140 held-out measurements. The final six holdout measurements cannot
+form another complete target and are not scored as a negative event. Earlier
+holdout readings may supply features at later origins, never future readings.
+After evaluation, the same fixed model is refitted on complete labeled windows
+from all available pre-origin history for inference.
+
+At the default 140/90 demo values, training contains **58 positive and 221
+negative forecast windows**. The holdout contains **4 positive and 6 negative
+nonoverlapping seven-day windows**. Synthetic holdout results at the unchanged
+0.5 classification threshold are:
+
+| Metric | Logistic regression | Constant no-event baseline |
+| --- | --- | --- |
+| Accuracy | 0.700000 | 0.600000 |
+| Precision | 0.666667 | Undefined (no positive predictions) |
+| Recall / sensitivity | 0.500000 | 0.000000 |
+| Specificity | 0.833333 | 1.000000 |
+| F1 | 0.571429 | 0.000000 |
+| Brier score | 0.222020 | 0.400000 |
+| Log loss | 0.756310 | 14.417461 |
+| ROC-AUC | 0.916667 | 0.500000 |
+
+The model's confusion counts are TP=2, FP=1, TN=5, FN=2. The constant baseline
+always predicts probability 0, so its confusion counts are TP=0, FP=0, TN=6,
+FN=4. Log loss uses the scoring library's machine-precision clipping for exact
+0/1 probabilities. Undefined metric ratios return null with
+`unavailable_reasons`; ROC-AUC remains null with an explicit reason if a changed
+threshold produces a single-class holdout.
+
+The API reports all these metrics, confusion/class counts, scoring dates,
+`constant_no_event_baseline`, and `scope=synthetic_data_only`. The existing
+`no_event_baseline_accuracy` field is retained. These ten deliberately generated
+fixture windows form a small software test set, not evidence of clinical
+accuracy or generalization to real BP data. Metrics change with review values.
+
+For manual verification, set these editable **demo review values**, not
+diagnostic recommendations, in `backend/.env`:
+
+```dotenv
+BP_REVIEW_SYSTOLIC_THRESHOLD=140
+BP_REVIEW_DIASTOLIC_THRESHOLD=90
+```
+
+From the repository root, start or restart Nestwatch:
+
+```sh
+cd backend
+source .venv/bin/activate
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+In another terminal:
+
+```sh
+curl --fail-with-body 'http://localhost:8001/patients/maya/forecast/bp' \
+  --output /tmp/nestwatch_bp_forecast.json
+python3 -m json.tool /tmp/nestwatch_bp_forecast.json
+```
+
+Expect origin `2026-10-15T08:00:00Z`, `horizon_days=7`,
+`model_type=logistic_regression`, a probability in [0, 1],
+`status=forecast_available`, the event definition/thresholds, prototype flags,
+feature values, and synthetic holdout metrics. The origin is the first unknown
+measurement time; the event interval is `[origin, origin + 7 days)`, with the
+exclusive end `2026-10-22T08:00:00Z`. It is based on the fixed dataset, not the
+current clock. No live Open Wearables server or credentials are required.
+
+`status` reports data/model availability, not a low/high or normal/abnormal
+classification. Insufficient recent history, incomplete training/holdout windows,
+stale history, or a single training label class returns `status=insufficient_data`,
+`probability=null`, and explicit `reasons`. It never substitutes probability 0.
+For example, changing the demo review values to 200/150 and restarting yields
+single-class insufficiency on this dataset. Invalid/nonpositive configuration
+fails at startup. Missing, invalid, or gapped dataset files return JSON 503.
+
+Training is lazy and cached by the threshold pair; changing thresholds changes
+labels, metrics, and inference, rather than reusing a differently defined model.
+Restart after replacing the CSV to clear any response cached from the older
+dataset. Tests verify dataset reproducibility, gradual episode shapes, both
+classes in training and holdout, exact target boundaries/equality/OR logic,
+chronological target purging, train-only scaling, future-data isolation,
+exclusion of fixture annotations from features, classification/baseline metric
+calculations, probability bounds, configuration, insufficiency, and the real
+CSV-to-endpoint path. No dashboard endpoint is added.

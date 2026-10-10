@@ -7,10 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..clients.open_wearables import OpenWearablesClient
 from ..dependencies import get_date_range, get_open_wearables_client
+from ..schemas.bp_forecast import BPForecast
 from ..schemas.glucose_forecast import GlucoseForecast
 from ..schemas.observed_change import ObservedChange
 from ..schemas.patient import Patient
 from ..schemas.timeline import PatientTimeline
+from ..services.bp_forecast import BPForecastError, get_bp_forecast
 from ..services.glucose_forecast import GlucoseForecastError, get_glucose_forecast
 from ..services.observed_change import build_observed_change, validate_windows
 from ..services.timeline import build_timeline, load_maya
@@ -55,4 +57,13 @@ def glucose_forecast() -> GlucoseForecast:
     try:
         return get_glucose_forecast()
     except GlucoseForecastError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@router.get("/forecast/bp", response_model=BPForecast)
+def bp_forecast(request: Request) -> BPForecast:
+    settings = request.app.state.settings
+    try:
+        return get_bp_forecast(settings.bp_review_systolic_threshold, settings.bp_review_diastolic_threshold)
+    except BPForecastError as exc:
         raise HTTPException(503, str(exc)) from exc
