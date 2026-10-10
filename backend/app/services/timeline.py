@@ -141,22 +141,26 @@ def _context_entries(patient: Patient, start_date: date, end_date: date) -> list
     return entries
 
 
-async def build_timeline(
-    patient: Patient, client: OpenWearablesClient, start_date: date, end_date: date
-) -> PatientTimeline:
-    if start_date > end_date:
-        raise ValueError("start_date must be on or before end_date")
-    samples = await client.get_timeseries(start_date, end_date, types=list(METRICS))
-    sessions = await client.get_sleep(start_date, end_date)
+def normalize_device_records(
+    records: list[dict[str, Any]], *, sleep: bool = False,
+) -> list[TimelineEntry]:
+    """Share source-record validation with callers that isolate resource failures."""
     try:
-        entries = [
-            _device_entry(record) for record in samples if record["type"] in METRICS
+        return [
+            _device_entry(record, sleep=sleep)
+            for record in records if sleep or record["type"] in METRICS
         ]
-        entries.extend(_device_entry(record, sleep=True) for record in sessions)
     except (KeyError, TypeError, ValueError) as exc:
         raise OpenWearablesError("Open Wearables returned an invalid timeline record") from exc
-    entries.extend(_context_entries(patient, start_date, end_date))
 
+
+def assemble_timeline(
+    patient: Patient, device_entries: list[TimelineEntry], start_date: date, end_date: date,
+) -> PatientTimeline:
+    """Build a range-specific timeline from already normalized device entries."""
+    if start_date > end_date:
+        raise ValueError("start_date must be on or before end_date")
+    entries = [*device_entries, *_context_entries(patient, start_date, end_date)]
     lower = datetime.combine(start_date, time.min, timezone.utc)
     upper = datetime.combine(end_date, time.max, timezone.utc)
     entries = [entry for entry in entries if lower <= _instant(entry.timestamp) <= upper]
@@ -170,3 +174,14 @@ async def build_timeline(
         entries=entries,
         count=len(entries),
     )
+
+
+async def build_timeline(
+    patient: Patient, client: OpenWearablesClient, start_date: date, end_date: date
+) -> PatientTimeline:
+    if start_date > end_date:
+        raise ValueError("start_date must be on or before end_date")
+    samples = await client.get_timeseries(start_date, end_date, types=list(METRICS))
+    sessions = await client.get_sleep(start_date, end_date)
+    entries = [*normalize_device_records(samples), *normalize_device_records(sessions, sleep=True)]
+    return assemble_timeline(patient, entries, start_date, end_date)

@@ -11,7 +11,7 @@ from ..schemas.observed_change import (
     ComparisonPolicy, ComparisonWindow, MetricComparison, ObservedChange, SourceProvenance,
 )
 from ..schemas.patient import Patient
-from ..schemas.timeline import TimelineEntry
+from ..schemas.timeline import PatientTimeline, TimelineEntry
 from .timeline import METRICS, _instant, build_timeline
 
 ANALYZED_METRICS = {
@@ -49,6 +49,11 @@ def _provenance(entries: list[TimelineEntry]) -> list[SourceProvenance]:
     ]
 
 
+def sample_age_days(timestamp: str, window_end: date) -> int:
+    """Calendar-date freshness shared by analysis and dashboard summaries."""
+    return (window_end - _instant(timestamp).astimezone(timezone.utc).date()).days
+
+
 def _window_summary(
     entries: list[TimelineEntry], end: date, label: str, settings: Settings
 ) -> tuple[float | None, str | None, list[str]]:
@@ -58,8 +63,7 @@ def _window_summary(
     if len(entries) < settings.observed_change_min_samples:
         reasons.append(f"too_few_{label}_samples")
     latest = max(entries, key=lambda entry: _instant(entry.timestamp))
-    latest_day = _instant(latest.timestamp).astimezone(timezone.utc).date()
-    if (end - latest_day).days > settings.observed_change_max_staleness_days:
+    if sample_age_days(latest.timestamp, end) > settings.observed_change_max_staleness_days:
         reasons.append(f"stale_{label}_data")
 
     mean = None
@@ -157,12 +161,11 @@ def partition_windows(
     return reference, recent
 
 
-async def build_observed_change(
-    patient: Patient, client: OpenWearablesClient, settings: Settings,
+def analyze_observed_change(
+    timeline: PatientTimeline, settings: Settings,
     reference_start: date, reference_end: date, recent_start: date, recent_end: date,
 ) -> ObservedChange:
     validate_windows(reference_start, reference_end, recent_start, recent_end)
-    timeline = await build_timeline(patient, client, reference_start, recent_end)
     reference_entries, recent_entries = partition_windows(
         timeline.entries, reference_start, reference_end, recent_start, recent_end,
     )
@@ -174,8 +177,8 @@ async def build_observed_change(
                 groups[entry.metric_type].append(entry)
 
     return ObservedChange(
-        patient_id=patient.patient_id,
-        synthetic=patient.synthetic,
+        patient_id=timeline.patient_id,
+        synthetic=timeline.synthetic,
         reference_window=ComparisonWindow(start_date=reference_start, end_date=reference_end),
         recent_window=ComparisonWindow(start_date=recent_start, end_date=recent_end),
         policy=ComparisonPolicy(
@@ -186,4 +189,15 @@ async def build_observed_change(
             compare_metric(metric, reference[metric], recent[metric], reference_end, recent_end, settings)
             for metric in ANALYZED_METRICS
         ],
+    )
+
+
+async def build_observed_change(
+    patient: Patient, client: OpenWearablesClient, settings: Settings,
+    reference_start: date, reference_end: date, recent_start: date, recent_end: date,
+) -> ObservedChange:
+    validate_windows(reference_start, reference_end, recent_start, recent_end)
+    timeline = await build_timeline(patient, client, reference_start, recent_end)
+    return analyze_observed_change(
+        timeline, settings, reference_start, reference_end, recent_start, recent_end,
     )
