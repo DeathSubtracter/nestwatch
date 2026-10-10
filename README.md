@@ -1,6 +1,6 @@
 # Nestwatch
 
-Nestwatch is a maternal-health hackathon prototype that brings fragmented health
+Nestwatch is a women's health project focused on high-risk pregnancies that brings fragmented health
 measurements and pregnancy context into one explainable view for review.
 
 Our initial use case is patients with type 2 diabetes transitioning from GLP-1
