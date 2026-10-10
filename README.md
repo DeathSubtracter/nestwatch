@@ -319,3 +319,48 @@ range, then includes only device measurement entries in each window. Samples
 in gaps between windows, context, symptoms, sleep, and unrequested heart-rate
 measurements do not contribute. All cursor pages are included. Pipeline errors
 remain 502/503/504 responses instead of being presented as missing measurements.
+
+## Synthetic CGM-style dataset
+
+The local forecasting-prototype dataset is
+`backend/app/data/maya_synthetic_cgm.csv`: **8,640 samples** spaced exactly five
+minutes apart over 30 complete UTC days. It starts at `2026-09-15T00:00:00Z`
+and ends at `2026-10-14T23:55:00Z`, with glucose values in `mg/dL`.
+
+Every row explicitly contains `synthetic=true`, `clinically_validated=false`,
+`source=nestwatch_synthetic_cgm`, and the generator seed (`42` by default).
+This is a stylized hackathon dataset, not clinically validated physiology.
+It does not model disease outcomes or responses to Maya's medication/pregnancy
+context. The generator adds smooth daily baseline variation, overnight behavior,
+three meal-related rises with gradual returns, small correlated noise, and an
+optional illustrative afternoon activity effect. The 80–220 mg/dL bounds are
+generator parameters, not clinical classifications.
+
+Regenerate the committed dataset from `backend` with the virtual environment
+activated; no Open Wearables server or API credentials are required:
+
+```sh
+python -m app.services.synthetic_cgm
+```
+
+Defaults use the fixed seed, date, duration, and enabled activity. To write an
+activity-disabled variant to a separate file:
+
+```sh
+python -m app.services.synthetic_cgm --no-activity --output /tmp/maya_cgm_no_activity.csv
+```
+
+The CLI also accepts `--seed`, `--days`, and `--start-date YYYY-MM-DD`. Local RNGs
+keep generation deterministic without changing Python's global random state.
+Generation does not automatically load the CSV into Open Wearables or the
+existing patient timeline, and this task adds no forecasting model.
+
+Inspect the header and first five samples from the repository root:
+
+```sh
+head -n 6 backend/app/data/maya_synthetic_cgm.csv
+```
+
+The generator tests verify determinism, five-minute spacing, the exact sample
+count, complete numeric/finite values, synthetic labels, daily structure,
+optional activity, and reproduction of the saved CSV.
