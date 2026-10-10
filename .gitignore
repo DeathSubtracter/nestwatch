@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Secrets / environment variables
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+
+# IDE
+.idea/
+
+# Logs
+*.log
+
+# Temporary data
+tmp/
