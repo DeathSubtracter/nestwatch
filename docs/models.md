@@ -7,6 +7,14 @@ verification. These are hackathon research prototypes using synthetic data;
 reported performance is synthetic-data performance only, not clinical validation.
 Commands assume the repository root unless stated otherwise.
 
+Before modifying or regenerating these components, read the
+[developer guide](developer-notes.md) for required skills, safe alternate-output
+generation, retraining/cache behavior and changes that require review. The default
+generator commands below overwrite their dataset files; the guide shows a safer
+comparison workflow. Future [condition-model design](condition-models.md) and
+[real-dataset research](datasets.md) are separate from these synthetic prototypes;
+no HDP, GDM or sPTB model is implemented.
+
 ## Synthetic CGM-style dataset
 
 The local forecasting-prototype dataset is

@@ -116,6 +116,19 @@ python -m pytest -q
 
 Open Wearables requests are mocked in tests; a running upstream server is not required.
 
+## Working With the Models
+
+Model work requires Python, NumPy/scikit-learn, time-series features, grouped and
+chronological validation, leakage prevention, evaluation/calibration, and
+health-data units/provenance. Pregnancy outcome modeling also requires clinical
+and biostatistical expertise.
+
+Read the [developer guide](docs/developer-notes.md) for component prerequisites
+and safe regeneration/retraining workflows. Existing [synthetic models](docs/models.md)
+remain separate from [future HDP/GDM/sPTB designs](docs/condition-models.md) and
+[dataset research](docs/datasets.md). No condition-specific model is implemented;
+GDM would apply only without pre-existing diabetes, so Maya is not eligible.
+
 ## Prototype & Safety
 
 - All demo patients and data are synthetic.
