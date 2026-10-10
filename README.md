@@ -151,3 +151,87 @@ repeating pagination cursors return 502. Upstream HTTP errors identify the
 upstream status without forwarding its response body. Invalid dates or a
 reversed range return 422. HTTP connections are reused and closed at shutdown;
 requests have a 10-second timeout, with a 5-second connection timeout.
+
+## Maya's profile and unified timeline
+
+Maya's Nestwatch-owned context is in `backend/app/fixtures/maya.json`. It contains
+her fictional patient ID, name, synthetic flag, gestational-age reference,
+GLP-1 last-dose date, medication transition, diabetes context, treatment text,
+and dated symptoms. The fixture is independent of Open Wearables.
+
+For manual verification:
+
+1. Keep Open Wearables running on `http://localhost:8000`.
+2. In `backend/.env`, set a valid `OPEN_WEARABLES_API_KEY` and
+   `OPEN_WEARABLES_USER_ID`, with `OPEN_WEARABLES_BASE_URL=http://localhost:8000`
+   and `NESTWATCH_PATIENT_ID=maya`. This demo associates Maya with that configured
+   Open Wearables user; only Maya is exposed by the patient routes.
+3. From the repository root, start or restart Nestwatch:
+
+   ```sh
+   cd backend
+   source .venv/bin/activate
+   python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+   ```
+
+4. In another terminal, request the local profile:
+
+   ```sh
+   curl --fail-with-body 'http://localhost:8001/patients/maya'
+   ```
+
+   Expect `patient_id: "maya"`, `display_name: "Maya"`, `synthetic: true`, and
+   gestational age of 10 weeks, 0 days **as of 2026-10-01**, plus medication,
+   diabetes, treatment, and symptom context. This request makes no upstream call.
+
+5. Request the timeline. This example includes all fixture medication and
+   symptom events; adjust the range to match your seeded wearable data:
+
+   ```sh
+   curl --fail-with-body --get 'http://localhost:8001/patients/maya/timeline' \
+     --data-urlencode 'start_date=2026-09-15' \
+     --data-urlencode 'end_date=2026-10-07'
+   ```
+
+The timeline returns `patient_id`, `synthetic`, `start_date`, `end_date`,
+`timezone`, the complete `patient_context` fixture, a sorted `entries` list,
+and `count`. The synthetic flag identifies the fictional patient; device
+records are fetched from the configured upstream user and are never invented.
+Each entry has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `timestamp` | Original device timestamp; sleep summaries use session end |
+| `kind` | `measurement`, `sleep`, `context`, `medication`, or `symptom` |
+| `origin` | `open_wearables` or `nestwatch` |
+| `metric_type`, `metric_definition` | Stable metric key and readable definition |
+| `value`, `unit` | Original measurement value/unit; structured sleep or pregnancy values have a null unit |
+| `provider`, `source`, `device`, `device_type` | Flattened device provenance; missing metadata stays null |
+| `details` | Complete original device record or synthetic context metadata |
+
+Device measurements include glucose, systolic/diastolic blood pressure, heart
+rate, resting heart rate, SDNN HRV, skin/body temperature, and weight. Sleep
+summary values retain source-reported session duration, sleep duration, time
+in bed, efficiency, stages, and nap status; the complete session remains in
+`details`. No sleep measurements are calculated from device samples.
+
+Dates include both boundary days in UTC. Entries are filtered by their timestamp
+and sorted by the actual instant, preserving original device timestamp strings.
+Offset-less upstream timestamps are treated as UTC. Sleep sessions are included
+when their end timestamp falls in the range, with start/end times retained in
+`details`.
+
+Ongoing pregnancy, diabetes, and treatment context appears once as a range
+snapshot, marked by `details.snapshot`. Gestational age advances from the fixed
+reference date using calendar-day arithmetic; this demo labels weeks before 14
+as first trimester, weeks 14–27 as second, and weeks 28 onward as third.
+Treatment is only included after its effective transition date. Date-only
+medication events use midnight UTC and carry `details.date_only: true`;
+symptoms retain their dated reports. Only entries are range-filtered;
+`patient_context` always contains the complete fixture and its dated reference.
+
+Empty wearable results still return the available synthetic context. Upstream
+failures return the same 502/503/504 errors as the debug endpoints, rather than a
+partial-success timeline. Malformed device records return 502; missing, invalid,
+or reversed query dates return 422. The patient tests use mocked upstream
+responses and require no live Open Wearables server.

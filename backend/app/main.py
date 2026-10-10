@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from .clients.open_wearables import OpenWearablesClient, OpenWearablesError
 from .config import Settings
 from .routes.debug import router as debug_router
+from .routes.patients import router as patients_router
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Nestwatch", debug=False, lifespan=lifespan)
 app.state.settings = Settings()
 app.include_router(debug_router)
+app.include_router(patients_router)
 
 app.add_middleware(
     CORSMiddleware,

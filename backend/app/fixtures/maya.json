@@ -1,0 +1,32 @@
+{
+  "patient_id": "maya",
+  "display_name": "Maya",
+  "synthetic": true,
+  "gestational_age": {
+    "weeks": 10,
+    "days": 0,
+    "as_of_date": "2026-10-01"
+  },
+  "glp1_last_dose_date": "2026-09-15",
+  "medication_transition_date": "2026-09-22",
+  "diabetes": {
+    "type": "type_2",
+    "since_date": "2021-01-01",
+    "context": "Fictional patient with pre-existing type 2 diabetes entering pregnancy after GLP-1 treatment."
+  },
+  "current_treatment_text": "Synthetic demo regimen: insulin-based treatment and glucose monitoring.",
+  "symptoms": [
+    {
+      "timestamp": "2026-10-02T08:00:00Z",
+      "name": "nausea",
+      "severity": "mild",
+      "notes": "Synthetic report of morning nausea."
+    },
+    {
+      "timestamp": "2026-10-06T18:30:00Z",
+      "name": "fatigue",
+      "severity": "mild",
+      "notes": "Synthetic report of evening fatigue."
+    }
+  ]
+}

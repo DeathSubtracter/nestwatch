@@ -3,21 +3,12 @@
 from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query
 
 from ..clients.open_wearables import OpenWearablesClient
+from ..dependencies import get_date_range, get_open_wearables_client
 
 router = APIRouter(prefix="/debug/open-wearables", tags=["debug"])
-
-
-def get_open_wearables_client(request: Request) -> OpenWearablesClient:
-    return request.app.state.open_wearables
-
-
-def get_date_range(start_date: date, end_date: date) -> tuple[date, date]:
-    if start_date > end_date:
-        raise HTTPException(422, "start_date must be on or before end_date")
-    return start_date, end_date
 
 
 @router.get("/timeseries")
