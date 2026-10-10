@@ -83,9 +83,9 @@ precedence:
 | `OPEN_WEARABLES_USER_ID` | Empty | Open Wearables user identifier |
 | `NESTWATCH_PATIENT_ID` | `maya` | Nestwatch patient identifier |
 
-The API key and user identifier can stay empty for this initial health-only app.
-Invalid configuration fails at startup. The health endpoint does not contact
-Open Wearables.
+Invalid configuration fails at startup. The API key and user identifier can stay
+empty for `/health`, which does not contact Open Wearables. The debugging
+endpoints require a valid Open Wearables API key and user identifier.
 
 Start Nestwatch from `backend` on its separate port:
 
@@ -104,3 +104,50 @@ Run tests from `backend` with the virtual environment activated:
 ```sh
 python -m pytest tests -q
 ```
+
+`pytest` also works from `backend`. All upstream requests in the tests are
+mocked; Open Wearables does not need to be running.
+
+## Verify the Open Wearables integration
+
+Set `OPEN_WEARABLES_BASE_URL=http://localhost:8000`, a valid
+`OPEN_WEARABLES_API_KEY`, and the corresponding `OPEN_WEARABLES_USER_ID` in
+`backend/.env`. Restart Nestwatch after editing configuration. Keep Open
+Wearables running separately on port 8000 and Nestwatch on port 8001.
+
+With Nestwatch started using the command above, run these requests. Choose a
+date range containing your seeded data:
+
+```sh
+curl --get 'http://localhost:8001/debug/open-wearables/timeseries' \
+  --data-urlencode 'start_date=2026-10-01' \
+  --data-urlencode 'end_date=2026-10-07' \
+  --data-urlencode 'types=blood_glucose' \
+  --data-urlencode 'types=heart_rate'
+
+curl --get 'http://localhost:8001/debug/open-wearables/sleep' \
+  --data-urlencode 'start_date=2026-10-01' \
+  --data-urlencode 'end_date=2026-10-07'
+```
+
+Both endpoints require ISO dates (`YYYY-MM-DD`); the range includes both boundary
+days. Repeat `types` to select multiple timeseries metrics, or omit it to request
+all types. Sleep sessions do not accept a metric filter in Open Wearables.
+
+The client sends `X-Open-Wearables-API-Key`, uses the configured user ID, and
+retrieves all pages by following `pagination.next_cursor` while `has_more` is
+true. Timeseries requests use `start_time`/`end_time` and `resolution=raw`;
+sleep requests use `start_date`/`end_date`.
+
+Responses contain `{"data": [...], "count": N}`. Records retain their original
+fields and timestamp strings, including timeseries `type`, `value`, `unit`, and
+nested `source.provider`, `source.source`, `source.device`, and
+`source.device_type`. Sleep records retain session times, durations, and source
+metadata. No records in the selected range returns `{"data": [], "count": 0}`.
+
+Missing credentials or a connection failure returns JSON with status 503;
+timeouts return 504. Upstream HTTP errors, invalid responses, and invalid or
+repeating pagination cursors return 502. Upstream HTTP errors identify the
+upstream status without forwarding its response body. Invalid dates or a
+reversed range return 422. HTTP connections are reused and closed at shutdown;
+requests have a 10-second timeout, with a 5-second connection timeout.

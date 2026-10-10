@@ -1,17 +1,32 @@
 """Minimal Nestwatch API."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+import httpx
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .clients.open_wearables import OpenWearablesClient, OpenWearablesError
 from .config import Settings
+from .routes.debug import router as debug_router
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Nestwatch", debug=False)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as http_client:
+        app.state.open_wearables = OpenWearablesClient(app.state.settings, http_client)
+        yield
+
+
+app = FastAPI(title="Nestwatch", debug=False, lifespan=lifespan)
 app.state.settings = Settings()
+app.include_router(debug_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,6 +40,13 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.exception_handler(OpenWearablesError)
+async def handle_open_wearables_error(
+    request: Request, exc: OpenWearablesError
+) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
 
 @app.exception_handler(Exception)
