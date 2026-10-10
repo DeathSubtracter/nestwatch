@@ -353,7 +353,8 @@ python -m app.services.synthetic_cgm --no-activity --output /tmp/maya_cgm_no_act
 The CLI also accepts `--seed`, `--days`, and `--start-date YYYY-MM-DD`. Local RNGs
 keep generation deterministic without changing Python's global random state.
 Generation does not automatically load the CSV into Open Wearables or the
-existing patient timeline, and this task adds no forecasting model.
+existing patient timeline. The glucose forecasting prototype below reads the
+CSV directly.
 
 Inspect the header and first five samples from the repository root:
 
@@ -364,3 +365,86 @@ head -n 6 backend/app/data/maya_synthetic_cgm.csv
 The generator tests verify determinism, five-minute spacing, the exact sample
 count, complete numeric/finite values, synthetic labels, daily structure,
 optional activity, and reproduction of the saved CSV.
+
+## Prototype 24-hour glucose forecast
+
+`GET /patients/maya/forecast/glucose` trains and runs an interpretable direct
+multi-output Ridge regression on the local synthetic CGM CSV. Every response
+contains `prototype=true`, `synthetic=true`, and `validated=false`. This is a
+hackathon research prototype, not a clinically validated prediction system.
+Holdout metrics describe performance on this synthetic dataset only.
+
+The model uses a `StandardScaler` followed by `Ridge(alpha=10, solver="cholesky")`.
+There are 19 features in the current CSV:
+
+- Glucose lags at 5, 10, 15, 30, 60, 120, and 1,440 minutes.
+- Trailing glucose means and population standard deviations over 60, 180, and
+  1,440 minutes.
+- Sine/cosine time-of-day features for the daily cycle and its second/third
+  harmonics, computed in UTC.
+
+If CSV columns named `meal_indicator` or `activity_indicator` are present, the
+loader accepts binary values and adds the last observed indicator plus its
+trailing 60-minute fraction. The current CSV has neither event column.
+`activity_enabled` is generator metadata and is not treated as an activity
+event. No future event values or generator meal schedules are used as features.
+
+Every feature uses samples strictly before its forecast origin. The Ridge model
+predicts all 288 future values directly from one origin's feature vector;
+inference does not read actual glucose from inside the forecast horizon.
+
+Evaluation splits raw observations chronologically: the first 80% (24 days,
+September 15–October 8, 2026) supplies training data; the final 20% (6 days,
+October 9–14) is held out. Training examples have one day of preceding history
+and a complete 24-hour target **ending before the split**. This gives 6,337
+training trajectories. Scaling is fitted only on training features. The fixed
+regularization parameter is not selected using holdout results.
+
+The frozen evaluation model predicts six nonoverlapping 24-hour trajectories,
+covering 1,728 held-out points. At each later evaluation origin, previously
+observed holdout glucose may enter the lag/rolling features; observations at or
+after that origin never do. MAE/RMSE measure full-day trajectories rather than
+teacher-forced five-minute predictions. After evaluation, a separate fit of the
+same fixed model uses all available pre-origin history for the endpoint forecast.
+Reported holdout metrics belong to the frozen evaluation model, not this refit.
+
+On the saved seed-42 dataset, synthetic holdout MAE is **7.911949 mg/dL** and
+RMSE is **10.018074 mg/dL**. These scores are not evidence of clinical accuracy
+or performance on real CGM data.
+
+For manual verification, from the repository root:
+
+```sh
+cd backend
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+In another terminal:
+
+```sh
+curl --fail-with-body 'http://localhost:8001/patients/maya/forecast/glucose' \
+  --output /tmp/nestwatch_glucose_forecast.json
+python3 -m json.tool /tmp/nestwatch_glucose_forecast.json
+```
+
+Expect `forecast_origin: "2026-10-15T00:00:00Z"`, `horizon_hours: 24`,
+`cadence_minutes: 5`, `model_type: "ridge_regression"`, the explicit prototype
+flags, 288 `forecast_points`, and `holdout_metrics` labeled
+`scope: "synthetic_data_only"`. Each point contains `timestamp` and
+`glucose_mg_dl`; model features and chronological evaluation dates/counts are
+also returned.
+
+The origin is the **first unobserved timestamp**, five minutes after the last
+CSV observation. Points cover `[origin, origin + 24 hours)` at five-minute
+cadence: midnight through 23:55 on October 15 for the saved dataset. The origin
+comes from the dataset, not the current clock. This endpoint requires no live
+Open Wearables server or API credentials.
+
+Training/evaluation runs lazily on the first request and the response is cached
+in memory. Restart Nestwatch after regenerating or replacing the CSV. Missing,
+invalid, gapped, or insufficient data returns a clear JSON 503 response. No
+model files or database are written. Tests cover deterministic training,
+strictly past-only features and historical inference, chronological target
+boundaries, train-only scaling, finite predictions, and the complete endpoint.

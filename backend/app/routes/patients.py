@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..clients.open_wearables import OpenWearablesClient
 from ..dependencies import get_date_range, get_open_wearables_client
-from ..schemas.patient import Patient
+from ..schemas.glucose_forecast import GlucoseForecast
 from ..schemas.observed_change import ObservedChange
+from ..schemas.patient import Patient
 from ..schemas.timeline import PatientTimeline
-from ..services.timeline import build_timeline, load_maya
+from ..services.glucose_forecast import GlucoseForecastError, get_glucose_forecast
 from ..services.observed_change import build_observed_change, validate_windows
+from ..services.timeline import build_timeline, load_maya
 
 router = APIRouter(prefix="/patients/maya", tags=["patients"])
 
@@ -46,3 +48,11 @@ async def observed_change(
         load_maya(), client, request.app.state.settings,
         reference_start, reference_end, recent_start, recent_end,
     )
+
+
+@router.get("/forecast/glucose", response_model=GlucoseForecast)
+def glucose_forecast() -> GlucoseForecast:
+    try:
+        return get_glucose_forecast()
+    except GlucoseForecastError as exc:
+        raise HTTPException(503, str(exc)) from exc
