@@ -46,6 +46,7 @@ The prototype explores:
 - Observed changes compared with a patient's previous measurements
 - A prototype 24-hour glucose forecast
 - A prototype 7-day blood-pressure event forecast
+- A transparent multisignal pattern status relative to a patient's own history
 - Explicit insufficient-data states when required measurements are unavailable
 
 ## Clinical Boundary
@@ -319,6 +320,129 @@ range, then includes only device measurement entries in each window. Samples
 in gaps between windows, context, symptoms, sleep, and unrequested heart-rate
 measurements do not contribute. All cursor pages are included. Pipeline errors
 remain 502/503/504 responses instead of being presented as missing measurements.
+
+## Multisignal pattern detector
+
+`GET /patients/maya/pattern-status` uses the same unified Open Wearables timeline
+and observed-change comparison helpers. It is a deterministic descriptive
+hackathon rule system, not a diagnosis, disease probability, maternal risk score,
+or validated medical alert. Every response has `validated=false` and
+`prototype=true`. It does not use or modify either predictive model.
+
+For each usable signal, the detector preserves the shared comparison's sample
+counts, means, units, freshness checks, and provider/source/device provenance.
+The signed normalized change is:
+
+```text
+scale = max(reference population standard deviation, abs(reference mean) * 0.05)
+normalized_change = (recent mean - reference mean) / scale
+```
+
+The relative floor avoids exaggerated contributions from nearly constant
+reference data. Both windows use equally weighted raw sample means. These are
+**engineering fixtures for hackathon testing, not clinical cutoffs or validated
+effect sizes**. Zero/invalid scales are unavailable, not a zero change.
+
+Increases in glucose, systolic/diastolic BP, and resting HR have positive
+directional contributions. Decreases in SDNN HRV, source-reported actual sleep
+duration, and sleep efficiency have positive contributions. Opposite directions
+do not contribute. Sleep duration uses `sleep_duration_seconds` in seconds;
+efficiency uses `efficiency_percent`. Missing actual sleep duration is never
+replaced by session length or time in bed. Naps are excluded. Multiple non-nap
+sessions on one UTC date use their sample mean, not a daily duration total.
+Invalid/missing sleep fields are excluded and their counts reported.
+
+A signal must have enough samples, enough distinct sampled UTC days in each
+window, compatible units, fresh data, and unchanged source/device sets. Its
+whole-window directional change must reach the configured threshold. It must
+also reach that same threshold in daily recent means on at least three
+consecutive sampled dates, relative to the same reference mean/scale. Missing
+dates break runs; a later stable or undersampled date ends an active run. The
+run must end within the configured freshness gap of the recent window's end.
+
+The five primary groups are glucose, BP, resting HR, HRV, and sleep. Systolic and
+diastolic BP share one vote; sleep duration and efficiency share one vote. The
+highest status requires at least three groups qualifying on the same three
+consecutive UTC dates near the window's end. This prevents changes at unrelated
+times, or multiple measurements of one group, from creating that status.
+
+Skin/body temperatures are optional context only and never vote for escalation.
+Their normalization uses reference variability alone because Celsius/Fahrenheit
+have an arbitrary zero. Unavailable temperature context is reported separately
+and does not reduce primary coverage.
+
+| Status | Rule |
+| --- | --- |
+| `insufficient_data` | Any required signal is unavailable, or too few primary groups are usable; the detector abstains. |
+| `change_to_review` | Enough distinct contributing groups meet the concurrent persistence rule. |
+| `watch` | A usable primary signal changed without meeting the highest rule, or optional primary coverage/provenance is incomplete. |
+| `normal` | All primary signals are usable with known providers and no qualifying directional change; this only describes these prototype rules. |
+
+Missing, sparse, stale, mixed-unit, or changed-source core signals cannot produce
+`normal`. The default required signals are glucose, both BP components, resting
+HR, and SDNN HRV. Missing optional sleep reduces `data_quality.coverage` to
+`partial`, so otherwise stable data returns `watch`. Unknown providers stay
+unknown and also reduce coverage. Coverage can remain partial alongside
+`change_to_review` if other usable groups satisfy the rules; the response always
+exposes that limitation. No samples are imputed.
+
+The response includes `policy`, `contributing_signals`, `non_contributing_signals`,
+all per-signal `comparison` objects, normalized/directional changes, contributions,
+daily means, observed/qualifying dates, longest/latest runs, concurrent group
+dates, `reasons`, `explanation`, and `data_quality`. A contribution is the positive
+directional magnitude after all contribution rules pass, zero for a usable
+non-contributor, and null for unavailable data. There is no aggregate numeric
+score or probability.
+
+Defaults are in `backend/.env.example`; override these in `backend/.env` and
+restart Nestwatch:
+
+| Variable | Default | Prototype purpose |
+| --- | --- | --- |
+| `PATTERN_NORMALIZED_CHANGE_THRESHOLD` | `1.0` | Minimum directional normalized change, for window and daily means |
+| `PATTERN_RELATIVE_SCALE_FLOOR` | `0.05` | Reference-mean fraction for the primary normalization scale floor |
+| `PATTERN_MIN_DAYS_PER_WINDOW` | `3` | Minimum distinct sampled UTC dates in each window |
+| `PATTERN_MIN_SAMPLES_PER_DAY` | `1` | Minimum recent samples for a qualifying daily mean |
+| `PATTERN_PERSISTENCE_DAYS` | `3` | Consecutive days for individual and concurrent persistence |
+| `PATTERN_REVIEW_MIN_GROUPS` | `3` | Distinct groups needed for `change_to_review` (minimum 2) |
+| `PATTERN_MIN_AVAILABLE_GROUPS` | `3` | Distinct usable primary groups required to avoid abstention |
+| `PATTERN_REQUIRED_SIGNALS` | JSON array of the five core metrics above | Required signals; sleep may also be required |
+| `OBSERVED_CHANGE_MIN_SAMPLES` | `3` | Shared minimum samples per window |
+| `OBSERVED_CHANGE_MAX_STALENESS_DAYS` | `2` | Shared maximum UTC date gap from each window's end |
+
+BP forecasting review thresholds do not affect this detector. All four query
+dates are required, inclusive UTC dates; windows must be ordered and must not
+overlap. Invalid dates/windows return 422 before any upstream requests. Real
+pipeline errors remain 502/503/504 rather than being labeled missing data.
+
+For manual verification, keep Open Wearables on port 8000 and configure the
+existing base URL, API key, and user ID in `backend/.env`. From the repository
+root, start or restart Nestwatch:
+
+```sh
+cd backend
+source .venv/bin/activate
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+In another terminal, choose windows containing your seeded measurements:
+
+```sh
+curl --fail-with-body --get 'http://localhost:8001/patients/maya/pattern-status' \
+  --data-urlencode 'reference_start=2026-10-01' \
+  --data-urlencode 'reference_end=2026-10-07' \
+  --data-urlencode 'recent_start=2026-10-08' \
+  --data-urlencode 'recent_end=2026-10-14' \
+  --output /tmp/nestwatch_pattern_status.json
+python3 -m json.tool /tmp/nestwatch_pattern_status.json
+```
+
+Inspect `status`, `validated=false`, `prototype=true`, `data_quality`, and each
+signal's comparison/persistence reasons. Sparse existing demo data may correctly
+return `insufficient_data`; it is not interpreted as stable or replaced with
+forecast training data. The tests mock all upstream data and cover stable,
+moderate/persistent, concurrent, directional, sleep, missing/stale/source-changed,
+configuration, deterministic, and endpoint error/schema cases.
 
 ## Synthetic CGM-style dataset
 

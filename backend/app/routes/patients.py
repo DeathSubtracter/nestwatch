@@ -11,10 +11,12 @@ from ..schemas.bp_forecast import BPForecast
 from ..schemas.glucose_forecast import GlucoseForecast
 from ..schemas.observed_change import ObservedChange
 from ..schemas.patient import Patient
+from ..schemas.pattern_status import PatternStatus
 from ..schemas.timeline import PatientTimeline
 from ..services.bp_forecast import BPForecastError, get_bp_forecast
 from ..services.glucose_forecast import GlucoseForecastError, get_glucose_forecast
 from ..services.observed_change import build_observed_change, validate_windows
+from ..services.pattern_status import build_pattern_status
 from ..services.timeline import build_timeline, load_maya
 
 router = APIRouter(prefix="/patients/maya", tags=["patients"])
@@ -47,6 +49,25 @@ async def observed_change(
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     return await build_observed_change(
+        load_maya(), client, request.app.state.settings,
+        reference_start, reference_end, recent_start, recent_end,
+    )
+
+
+@router.get("/pattern-status", response_model=PatternStatus)
+async def pattern_status(
+    request: Request,
+    reference_start: date,
+    reference_end: date,
+    recent_start: date,
+    recent_end: date,
+    client: Annotated[OpenWearablesClient, Depends(get_open_wearables_client)],
+) -> PatternStatus:
+    try:
+        validate_windows(reference_start, reference_end, recent_start, recent_end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return await build_pattern_status(
         load_maya(), client, request.app.state.settings,
         reference_start, reference_end, recent_start, recent_end,
     )

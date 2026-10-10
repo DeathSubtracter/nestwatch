@@ -76,9 +76,10 @@ def _window_summary(
     return mean, latest.timestamp, reasons
 
 
-def _compare_metric(
+def compare_metric(
     metric: str, reference: list[TimelineEntry], recent: list[TimelineEntry],
     reference_end: date, recent_end: date, settings: Settings,
+    *, metric_name: str | None = None, metric_definition: str | None = None,
 ) -> MetricComparison:
     reference_mean, reference_latest, reasons = _window_summary(reference, reference_end, "reference", settings)
     recent_mean, recent_latest, recent_reasons = _window_summary(recent, recent_end, "recent", settings)
@@ -117,8 +118,8 @@ def _compare_metric(
 
     return MetricComparison(
         metric_type=metric,
-        metric_name=ANALYZED_METRICS[metric],
-        metric_definition=METRICS[metric],
+        metric_name=metric_name or ANALYZED_METRICS[metric],
+        metric_definition=metric_definition or METRICS[metric],
         unit=unit,
         available_units=available_units,
         reference_units=sorted({entry.unit for entry in reference if entry.unit}),
@@ -141,22 +142,36 @@ def _compare_metric(
     )
 
 
+def partition_windows(
+    entries: list[TimelineEntry], reference_start: date, reference_end: date,
+    recent_start: date, recent_end: date,
+) -> tuple[list[TimelineEntry], list[TimelineEntry]]:
+    """Shared inclusive UTC date filtering for descriptive services."""
+    reference, recent = [], []
+    for entry in entries:
+        day = _instant(entry.timestamp).astimezone(timezone.utc).date()
+        if reference_start <= day <= reference_end:
+            reference.append(entry)
+        elif recent_start <= day <= recent_end:
+            recent.append(entry)
+    return reference, recent
+
+
 async def build_observed_change(
     patient: Patient, client: OpenWearablesClient, settings: Settings,
     reference_start: date, reference_end: date, recent_start: date, recent_end: date,
 ) -> ObservedChange:
     validate_windows(reference_start, reference_end, recent_start, recent_end)
     timeline = await build_timeline(patient, client, reference_start, recent_end)
+    reference_entries, recent_entries = partition_windows(
+        timeline.entries, reference_start, reference_end, recent_start, recent_end,
+    )
     reference = {metric: [] for metric in ANALYZED_METRICS}
     recent = {metric: [] for metric in ANALYZED_METRICS}
-    for entry in timeline.entries:
-        if entry.kind != "measurement" or entry.origin != "open_wearables" or entry.metric_type not in ANALYZED_METRICS:
-            continue
-        day = _instant(entry.timestamp).astimezone(timezone.utc).date()
-        if reference_start <= day <= reference_end:
-            reference[entry.metric_type].append(entry)
-        elif recent_start <= day <= recent_end:
-            recent[entry.metric_type].append(entry)
+    for window, groups in ((reference_entries, reference), (recent_entries, recent)):
+        for entry in window:
+            if entry.kind == "measurement" and entry.origin == "open_wearables" and entry.metric_type in ANALYZED_METRICS:
+                groups[entry.metric_type].append(entry)
 
     return ObservedChange(
         patient_id=patient.patient_id,
@@ -168,7 +183,7 @@ async def build_observed_change(
             max_staleness_days=settings.observed_change_max_staleness_days,
         ),
         metrics=[
-            _compare_metric(metric, reference[metric], recent[metric], reference_end, recent_end, settings)
+            compare_metric(metric, reference[metric], recent[metric], reference_end, recent_end, settings)
             for metric in ANALYZED_METRICS
         ],
     )
