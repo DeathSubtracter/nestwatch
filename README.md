@@ -6,6 +6,9 @@ Bringing fragmented wearable signals, metabolic trends, and clinical context int
 
 Built for the 2026 UC Berkeley Innovation Intelligence Hackathon.
 
+ACCESS OUR PITCH DECK HERE: https://docs.google.com/presentation/d/11CCSIWzc1HrqlWES2wFEBRf5zlmSB5R3/edit?usp=sharing&ouid=101655455924727037414&rtpof=true&sd=true
+
+
 Our initial use case is patients with type 2 diabetes transitioning from GLP-1
 treatment into pregnancy. **Maya, our demo patient, and all demo data are synthetic.**
 
