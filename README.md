@@ -166,4 +166,4 @@ GDM would apply only without pre-existing diabetes, so Maya is not eligible.
 
 Built for the **2026 UC Berkeley Innovation Intelligence Hackathon**.
 
-**Pitch deck:** [Nestwatch: Refined Pitch and Technical Appendix](docs/pitch/Nestwatch_Refined_Pitch_and_Technical_Appendix.pptx) (PowerPoint)
+**Pitch deck:** [Nestwatch: Refined Pitch and Technical Appendix](https://docs.google.com/presentation/d/11CCSIWzc1HrqlWES2wFEBRf5zlmSB5R3/edit?usp=sharing) (Google Slides) · [PowerPoint copy](docs/pitch/Nestwatch_Refined_Pitch_and_Technical_Appendix.pptx)
