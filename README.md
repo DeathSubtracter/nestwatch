@@ -10,6 +10,8 @@ ACCESS OUR PITCH DECK HERE: https://docs.google.com/presentation/d/11CCSIWzc1Hrq
 
 DEMO VIDEO: https://youtu.be/sArTKkmU7Lk?si=7BHTMZQFX40vEVhu
 
+Clinician demo portal: https://nestwatchproviderportal.lovable.app/
+
 Our initial use case is patients with type 2 diabetes transitioning from GLP-1
 treatment into pregnancy. **Maya, our demo patient, and all demo data are synthetic.**
 
