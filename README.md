@@ -11,7 +11,7 @@ treatment into pregnancy. **Maya, our demo patient, and all demo data are synthe
 
 ## The Problem - The "Ozempic Baby" Clinical Crisis
 
-Over 12% of U.S. adults currently take GLP-1 receptor agonists (e.g., semaglutide, tirzepatide), but there is a huge clinical unmet need in addressing consequenes of people who are actively on the drug. A specific need is identified as these therapies restore metabolic balance and ovulation, healthcare systems are experiencing a sharp increase in unplanned pregnancies ("Ozempic Babies").   Because GLP-1 medications are contraindicated during pregnancy, patients must discontinue treatment immediately. This sudden withdrawal triggers an acute cardiometabolic and glycemic rebound. Observational studies show that patients discontinuing GLP-1s near pregnancy entry face heightened risks of:  
+Over 12% of U.S. adults currently take GLP-1 receptor agonists (e.g., semaglutide, tirzepatide), but there is a huge clinical unmet need in addressing consequenes of people who are actively on the drug. A specific need is identified as these therapies restore metabolic balance and ovulation, very recent literature found that healthcare systems are experiencing a sharp increase in unplanned pregnancies ("Ozempic Babies").   Because GLP-1 medications are contraindicated during pregnancy, patients must discontinue treatment immediately. This sudden withdrawal triggers an acute cardiometabolic and glycemic rebound. Observational studies show that patients discontinuing GLP-1s near pregnancy entry face heightened risks of:  
 Gestational Diabetes (GDM): 17% vs. 13% baseline   
 Hypertensive Disorders of Pregnancy (HDP / Preeclampsia): 46% vs. 36% baseline   
 Preterm Delivery (<37 weeks): 20% vs. 15% baseline
